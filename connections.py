@@ -1,6 +1,11 @@
+"""
+VirusTotal 에 접근 및 실제 쿼리를 담당하는 모듈
+"""
+
 from .interval import PRIVATE_KEY_INTERVAL, PUBLIC_KEY_INTERVAL, Interval
 from .err import *
 import re
+import hashlib
 
 
 try:
@@ -43,6 +48,7 @@ class Connection:
     def __del__(self):
         """
         destructor
+
         :return:
         """
         pass
@@ -50,6 +56,7 @@ class Connection:
     def download(self, hash):
         """
         VirusTotal 에서 샘플을 다운로드 받는다.
+
         Private Key 만 해당됨.
         :param hash: str(), 다운받을 샘플 해쉬
         :return: bytearray()
@@ -73,9 +80,11 @@ class Connection:
     def scan(self, hash):
         """
         VirusTotal 리포트를 가져온다.
+
         :param hash: str(), 검색할 샘플 해쉬
         :return: dict()
         """
+
         if not isValidHash(hash):
             raise HashFormatError('[!] Invalid hash. \'%s\'' % hash)
 
@@ -100,10 +109,12 @@ class Connection:
 def isValidStatusCode(status_code):
     """
     VirusTotal에서 제공하는 status_code 가 올바른지 확인한다.
+
     정상이 아닐경우 예외를 발생하는 메쏘드
     :param status_code: int()
     :return: bool()
     """
+
     if status_code is requests.codes.ok:
         return True
     elif status_code == 204:  # 쿼리제한 도달
@@ -112,13 +123,16 @@ def isValidStatusCode(status_code):
         raise ResponseCodeError('[!] status_code:403, Required privileges not exists in API key')
     return False
 
+
 def isValidHash(hashStr, apikey=False):
         """
         해쉬문자열이 유효한지 검증한다
+
         :param hashStr: str()
         :param apikey: bool(), 검증할 문자열이 API key 일경우 True
         :return: bool()
         """
+
         patterns = [
             '^[a-fA-F0-9]{32}$',  # MD5
             '^[a-fA-F0-9]{40}$',  # SHA1
@@ -134,3 +148,49 @@ def isValidHash(hashStr, apikey=False):
                 return True
 
         return False
+
+
+def md5(filepath, blocksize=8192):
+    """
+    경로에 있는 파일의 MD5 해쉬 얻는다
+
+    :param filepath: str, 파일 경로
+    :param blocksize: int, 해쉬블럭
+    :return: str, MD5 16진 문자열
+    """
+
+    md5 = hashlib.md5()
+    try:
+        f = open(filepath, "rb")
+    except IOError as e:
+        print("file open error: " + e)
+        return
+    while True:
+        buf = f.read(blocksize)
+        if not buf:
+            break
+        md5.update(buf)
+    return md5.hexdigest()
+
+
+def sha256(filepath, blocksize=8192):
+    """
+   경로에 있는 파일의 SHA256 해쉬 얻는다
+
+   :param filepath: str, 파일 경로
+   :param blocksize: int, 해쉬블럭
+   :return: str, SHA256 16진 문자열
+   """
+
+    sha_256 = hashlib.sha256()
+    try:
+        f = open(filepath, "rb")
+    except IOError as e:
+        print("file open error: " + e)
+        return
+    while True:
+        buf = f.read(blocksize)
+        if not buf:
+            break
+        sha_256.update(buf)
+    return sha_256.hexdigest()
