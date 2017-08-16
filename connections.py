@@ -11,7 +11,7 @@ import hashlib
 try:
     import requests
 except ImportError:
-    print('[!] Import Error, Try \'pip install requests\'\n')
+    print('Import Error, Try \'pip install requests\'\n')
 
 
 class Connection:
@@ -31,20 +31,22 @@ class Connection:
         self.apikeys = list()  # 생성시 받은 인자를 검증하고 키로 사용
         self.interval = None  # 실행모드에 따라 쿼리 간격을 조절하는 변수
 
-        # API 키는 list 로만 받는다
-        if type(apikeys) is not list:
-            raise TypeError('[!] Accepted list() only, not \'%s\'' % type(apikeys))
+        # APIkeys 를 list 로 바꿔준다 (개인키의 경우 대게 한개만 전달)
+        if isinstance(apikeys, str):
+            apikeys = [apikeys, ]
 
         # API 키가 올바른지 검증한다
         for key in apikeys:
+            if key is '':
+                continue
             if isValidHash(key, apikey=True):
                 self.apikeys.append(key)
             else:
-                raise KeyFormatError('[!] Invalid API key. \'%s\'' % key)
+                raise KeyFormatError('Invalid API key format. \'%s\'' % key)
 
         # 유효한 API 키 갯수를 검증한다
         if len(self.apikeys) < 1:
-            raise OutOfKeyError('[!] Out of API key.')
+            raise OutOfKeyError('Out of API key.')
 
         # 여러개의 Public 키 사용을 위한 키관리 클래스, Interval 을 생성한다
         if private:
@@ -61,7 +63,6 @@ class Connection:
 
     def download(self, hash):
         """VirusTotal 에서 샘플을 다운로드 받는다.
-
         Private 모드에서만 사용할 수 있다.
         :param hash: str, 다운받을 샘플 해쉬
         :return: bytearray
@@ -94,6 +95,51 @@ class Connection:
             return response.content
         return False
 
+    def download_by_progress(self, hash):
+        """VirusTotal 에서 샘플을 다운로드 받는 yield 함수
+
+        Private 모드에서만 사용할 수 있다.
+        :param hash: str, 다운받을 샘플 해쉬
+        :return:
+        """
+
+        # Public 모드로 실행중인지 검사한다
+        if self.interval.interval != PRIVATE_KEY_INTERVAL:
+            raise PrivilegeError('VirusTotal is Running on PUBLIC mode')
+
+        # 실수로 공백을 넣은 경우를 대비한다
+        hash = hash.strip()
+
+        # 다운로드 받을 해쉬 유효성을 검증한다
+        if not isValidHash(hash):
+            raise HashFormatError('Invalid hash. \'%s\'' % hash)
+
+        # 파라미터를 설정한다
+        params = dict()
+        params['apikey'] = self.interval.pick()
+        params['hash'] = hash
+
+        try:
+            response = requests.get('https://www.virustotal.com/vtapi/v2/file/download', params=params, stream=True)
+
+            # 응답코드를 검증한다
+            if isValidStatusCode(response.status_code):
+
+                downloaded = 0
+                filesize = int(response.headers.get('content-length', 0))  # 다운받을 파일 크기
+
+                for chunk in response.iter_content(chunk_size=1024):  # 다운로드 수행
+                    downloaded += len(chunk)
+
+                    content = dict()  # 결과 전송용 변수
+                    content['filesize'] = filesize
+                    content['downloaded'] = downloaded
+                    content['chunk'] = chunk  # 다운받은 데이터
+                    yield content
+
+        except requests.RequestException as e:
+            raise RequestError('%s' % str(e))
+
     def scan(self, hash):
         """VirusTotal 리포트를 가져온다.
 
@@ -106,11 +152,11 @@ class Connection:
 
         # 해쉬 유효성을 검증한다
         if not isValidHash(hash):
-            raise HashFormatError('[!] Invalid hash. \'%s\'' % hash)
+            raise HashFormatError('Invalid hash. \'%s\'' % hash)
 
         # 파라미터를 설정한다
         params = dict()
-        params['apikey'] = self.interval.pop()
+        params['apikey'] = self.interval.pick()
         params['resource'] = hash
         headers = {
             "Accept-Encoding": "gzip, deflate",
@@ -121,16 +167,23 @@ class Connection:
         try:
             response = requests.get('https://www.virustotal.com/vtapi/v2/file/report', params=params, headers=headers)
         except requests.RequestException as e:
-            raise RequestError('[!] %s' % str(e))
+            raise RequestError('%s' % str(e))
 
         # 응답코드를 검증한다
         if isValidStatusCode(response.status_code):
-            return response.json()
+
+            report = response.json()
+
+            if report['response_code']:
+                return report
+            else:
+                raise ResponseCodeError('response_code:0, No report exists in virustotal')
+
         return False
 
 
 def isValidStatusCode(status_code):
-    """VirusTotal에서 제공하는 status_code 가 올바른지 확인한다.
+    """requests 모듈의 응답결과(status_code) 가 올바른지 확인한다.
 
     정상이 아닐경우 예외를 발생하는 메쏘드
     :param status_code: int()
@@ -140,11 +193,11 @@ def isValidStatusCode(status_code):
     if status_code is requests.codes.ok:
         return True
     elif status_code == 204:  # 쿼리제한 도달
-        raise ResponseCodeError('[!] status_code:204, API query limit reached')
+        raise ResponseCodeError('status_code:204, API query limit reached')
     elif status_code == 403:  # 권한없음
-        raise ResponseCodeError('[!] status_code:403, Required privileges not exists in API key')
+        raise ResponseCodeError('status_code:403, Required privileges not exists in API key')
     elif status_code == 404:  # 다운로드 할 파일 없음
-        raise ResponseCodeError('[!] status_code:404, No sample exists in virustotal')
+        raise ResponseCodeError('status_code:404, No sample exists in virustotal')
     return False
 
 
