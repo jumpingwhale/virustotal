@@ -9,6 +9,12 @@ class ResponseCodeError(Error):
         super().__init__(msg)
 
 
+class NoReportError(ResponseCodeError):
+    """VirusTotal 리포트 없음 에러"""
+    def __init__(self, msg):
+        super().__init__(msg)
+
+
 class KeyFormatError(Error):
     """API 키 형식 에러"""
     def __init__(self, msg):
