@@ -15,6 +15,12 @@ class NoReportError(ResponseCodeError):
         super().__init__(msg)
 
 
+class QueryOptionError(ResponseCodeError):
+    """Search modifier 오류 에러"""
+    def __init__(self, msg):
+        super().__init__(msg)
+
+
 class KeyFormatError(Error):
     """API 키 형식 에러"""
     def __init__(self, msg):

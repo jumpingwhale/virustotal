@@ -12,6 +12,8 @@ try:
 except ImportError:
     print('Import Error, Try \'pip install requests\'\n')
 
+VIRUSTOTAL_URL = 'https://www.virustotal.com'
+
 
 class Connection:
     """VirusTotal 쿼리 및 다운로드용 클래스
@@ -69,13 +71,17 @@ class Connection:
     def download(self, hash):
         """VirusTotal 에서 샘플을 다운로드 받는다
 
+        https://www.virustotal.com/ko/documentation/private-api/#file-download
+
         Private 모드에서만 사용할 수 있다.
-        :param _hash: str, 다운받을 샘플 해쉬
+        :param hash: str, 다운받을 샘플 해쉬
         :return: bytearray
         """
 
+        _url = VIRUSTOTAL_URL + '/vtapi/v2/file/download'
+
         # Public 모드로 실행중인지 검사한다
-        if self.interval.interval != PRIVATE_KEY_INTERVAL:
+        if not self.private:
             raise PrivilegeError('VirusTotal is Running on PUBLIC mode')
 
         # 다운로드 받을 해쉬 유효성을 검증한다
@@ -89,7 +95,7 @@ class Connection:
 
         # 다운로드 한다
         try:
-            _res = requests.get('https://www.virustotal.com/vtapi/v2/file/download', params=_params)
+            _res = requests.get(_url, params=_params)
         except requests.RequestException as e:
             raise RequestError('%s' % str(e))
 
@@ -101,13 +107,17 @@ class Connection:
     def download_by_progress(self, hash):
         """VirusTotal 에서 샘플을 다운로드 받는 yield 함수
 
+        https://www.virustotal.com/ko/documentation/private-api/#file-download
+
         Private 모드에서만 사용할 수 있다.
         :param hash: str, 다운받을 샘플 해쉬
         :return:
         """
 
+        _url = VIRUSTOTAL_URL + '/vtapi/v2/file/download'
+
         # Public 모드로 실행중인지 검사한다
-        if self.interval.interval != PRIVATE_KEY_INTERVAL:
+        if not self.private:
             raise PrivilegeError('VirusTotal is Running on PUBLIC mode')
 
         # 다운로드 받을 해쉬 유효성을 검증한다
@@ -121,7 +131,7 @@ class Connection:
 
         # 다운로드 한다
         try:
-            _res = requests.get('https://www.virustotal.com/vtapi/v2/file/download', params=_params, stream=True)
+            _res = requests.get(_url, params=_params, stream=True)
 
             # 응답코드를 검증한다
             if isValidStatusCode(_res.status_code):
@@ -140,12 +150,16 @@ class Connection:
         except requests.RequestException as e:
             raise RequestError('%s' % str(e))
 
-    def scan(self, hash):
+    def report(self, hash):
         """VirusTotal 리포트를 가져온다.
+
+        https://www.virustotal.com/ko/documentation/private-api/#get-report
 
         :param hash: str, 검색할 샘플 해쉬
         :return: dict
         """
+
+        _url = VIRUSTOTAL_URL + '/vtapi/v2/file/report'
 
         # 해쉬 유효성을 검증한다
         _hash = hash.strip()
@@ -159,7 +173,7 @@ class Connection:
 
         # 보고서를 쿼리한다
         try:
-            _res = requests.get('https://www.virustotal.com/vtapi/v2/file/report', params=_params, headers=self.headers)
+            _res = requests.get(_url, params=_params, headers=self.headers)
         except requests.RequestException as e:
             raise RequestError('%s' % str(e))
 
@@ -174,7 +188,17 @@ class Connection:
                 raise NoReportError('response_code:0, No report exists in virustotal')
         return False
 
-    def scan_url(self, url):
+    def url_report(self, url):
+        """url 스캔 결과를 가져온다
+
+        https://www.virustotal.com/ko/documentation/private-api/#url-report
+
+        :param url:
+        :return:
+        """
+
+        _url = VIRUSTOTAL_URL + '/vtapi/v2/url/report'
+
         # 파라미터를 설정한다
         _params = {'apikey': self.interval.pick(),
                    'resource': url,
@@ -182,7 +206,7 @@ class Connection:
 
         # 보고서를 쿼리한다
         try:
-            _res = requests.post('https://www.virustotal.com/vtapi/v2/url/report', params=_params, headers=self.headers)
+            _res = requests.post(_url, params=_params, headers=self.headers)
         except requests.RequestException as e:
             raise RequestError('%s' % str(e))
 
@@ -196,6 +220,49 @@ class Connection:
             else:
                 raise NoReportError('response_code:0, No report exists in virustotal')
         return False
+
+    def search(self, query, offset=None):
+        """조건을 주어 샘플을 검색한다 (recursive yield 함수)
+
+        Private 키 종류에 상관없이, 일일 50000쿼리로 제한된다.
+        VirusTotal Intelligence 의 Web UI를 통한 검색과 완전히 동일한 기능.
+        `쿼리사용법`_ 을 보려면 VirusTotal Community 가입해야 가능.
+        300 개 이상의 리턴에 대해선 offset 파라미터를 사용해야 한다. `API사용법`_ .
+
+        .. _API사용법: https://www.virustotal.com/ko/documentation/private-api/#search
+        .. _쿼리사용법: https://www.virustotal.com/intelligence/help/file-search/#search-modifiers
+        :param query:
+        :return:
+        """
+
+        _url = VIRUSTOTAL_URL + '/vtapi/v2/file/search'
+
+        # 파라미터를 설정한다
+        _params = {'apikey': self.interval.pick(),
+                   'query': query}
+        if offset: _params['offset'] = offset  # 결과가 300개 이상이경우, 다음 300개를 받기 위해 설정해준다
+
+        # 보고서를 쿼리한다
+        try:
+            _res = requests.post(_url, params=_params, headers=self.headers)
+        except requests.RequestException as e:
+            raise RequestError('%s' % str(e))
+
+        # 응답코드를 검증한다
+        if isValidStatusCode(_res.status_code):
+
+            _report = _res.json()
+
+            if _report['response_code'] is 0:  # 예외처리
+                raise NoReportError('response_code:0, Query \'%s\' matches no samples' % str(query))
+            elif _report['response_code'] is -1:  # 예외처리
+                raise QueryOptionError('response_code:-1, Invalid query \'%s\'' % str(query))
+
+            elif _report['response_code'] is 1:  # 실제 동작
+                for _hash in _report['hashes']:  # 먼저 해쉬목록을 전달해주고
+                    yield _hash
+                if _report['offset']:  # 해쉬가 더 있을경우
+                    yield from self.search(query, offset=offset)  # 더 받아온다
 
 
 def isValidStatusCode(status_code):
