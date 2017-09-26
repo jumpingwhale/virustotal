@@ -1,5 +1,15 @@
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
 """
-VirusTotal 에 접근 및 실제 쿼리를 담당하는 모듈
+패키지의 실제 동작이 구현된 모듈, __init__.py 모듈의 connect() 함수는
+이 패키지의 Connection 클래스를 생성하는 역할을 한다. pymysql 의 클래스 생성방식을 따랐다.
+접속은 아래와 같이 할 수 있다.
+
+:Example:
+from virustotal import *
+vt = conntect('MY_API_KEY', private=False)
+
+동시에 여러 public 키 사용이 가능하다. 다수의 키 관리 클래스는 interval을 참고
 """
 
 from .interval import PRIVATE_KEY_INTERVAL, PUBLIC_KEY_INTERVAL, Interval
@@ -168,8 +178,8 @@ class Connection:
 
         # 파라미터를 설정한다
         _params = {'apikey': self.interval.pick(),
-                   'hash': _hash,
-                   'allinfo': 1 if self.private else 0}
+                   'resource': _hash}
+        if self.private: _params['allinfo'] = 1
 
         # 보고서를 쿼리한다
         try:
@@ -201,8 +211,8 @@ class Connection:
 
         # 파라미터를 설정한다
         _params = {'apikey': self.interval.pick(),
-                   'resource': url,
-                   'allinfo': 1 if self.private else 0}
+                   'resource': url}
+        if self.private: _params['allinfo'] = 1
 
         # 보고서를 쿼리한다
         try:
@@ -221,7 +231,7 @@ class Connection:
                 raise NoReportError('response_code:0, No report exists in virustotal')
         return False
 
-    def search(self, query, offset=None):
+    def search(self, queryopt, offset=None):
         """조건을 주어 샘플을 검색한다 (recursive yield 함수)
 
         Private 키 종류에 상관없이, 일일 50000쿼리로 제한된다.
@@ -231,7 +241,7 @@ class Connection:
 
         .. _API사용법: https://www.virustotal.com/ko/documentation/private-api/#search
         .. _쿼리사용법: https://www.virustotal.com/intelligence/help/file-search/#search-modifiers
-        :param query:
+        :param queryopt:
         :return:
         """
 
@@ -239,7 +249,7 @@ class Connection:
 
         # 파라미터를 설정한다
         _params = {'apikey': self.interval.pick(),
-                   'query': query}
+                   'query': queryopt}
         if offset: _params['offset'] = offset  # 결과가 300개 이상이경우, 다음 300개를 받기 위해 설정해준다
 
         # 보고서를 쿼리한다
@@ -254,15 +264,15 @@ class Connection:
             _report = _res.json()
 
             if _report['response_code'] is 0:  # 예외처리
-                raise NoReportError('response_code:0, Query \'%s\' matches no samples' % str(query))
+                raise NoReportError('response_code:0, Query \'%s\' matches no samples' % str(queryopt))
             elif _report['response_code'] is -1:  # 예외처리
-                raise QueryOptionError('response_code:-1, Invalid query \'%s\'' % str(query))
+                raise QueryOptionError('response_code:-1, Invalid query option \'%s\'' % str(queryopt))
 
             elif _report['response_code'] is 1:  # 실제 동작
                 for _hash in _report['hashes']:  # 먼저 해쉬목록을 전달해주고
                     yield _hash
-                if _report['offset']:  # 해쉬가 더 있을경우
-                    yield from self.search(query, offset=offset)  # 더 받아온다
+                if 'offset' in _report:  # 해쉬가 더 있을경우
+                    yield from self.search(queryopt, offset=offset)  # 더 받아온다
 
 
 def isValidStatusCode(status_code):
